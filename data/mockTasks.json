@@ -1,0 +1,92 @@
+[
+  {
+    "id": "1",
+    "title": "Morning Workout",
+    "description": "30 min HIIT session + stretching",
+    "startTime": "06:30",
+    "endTime": "07:30",
+    "category": "health",
+    "telegramReminder": true,
+    "completed": false
+  },
+  {
+    "id": "2",
+    "title": "Standup Meeting",
+    "description": "Daily team sync",
+    "startTime": "09:00",
+    "endTime": "09:30",
+    "category": "work",
+    "telegramReminder": true,
+    "completed": false
+  },
+  {
+    "id": "3",
+    "title": "Deep Work Session",
+    "description": "Project X implementation",
+    "startTime": "10:00",
+    "endTime": "12:30",
+    "category": "work",
+    "telegramReminder": false,
+    "completed": false
+  },
+  {
+    "id": "4",
+    "title": "Lunch & Break",
+    "description": "Try the new salad place",
+    "startTime": "12:30",
+    "endTime": "13:30",
+    "category": "personal",
+    "telegramReminder": false,
+    "completed": false
+  },
+  {
+    "id": "5",
+    "title": "Client Presentation",
+    "description": "Quarterly review with ABC Corp",
+    "startTime": "14:00",
+    "endTime": "15:30",
+    "category": "work",
+    "telegramReminder": true,
+    "completed": false
+  },
+  {
+    "id": "6",
+    "title": "Online Course",
+    "description": "Advanced React patterns",
+    "startTime": "16:00",
+    "endTime": "17:00",
+    "category": "learning",
+    "telegramReminder": false,
+    "completed": false
+  },
+  {
+    "id": "7",
+    "title": "Gym Session",
+    "description": "Weight training - Upper body",
+    "startTime": "18:00",
+    "endTime": "19:00",
+    "category": "health",
+    "telegramReminder": true,
+    "completed": false
+  },
+  {
+    "id": "8",
+    "title": "Family Dinner",
+    "description": "Movie night afterwards",
+    "startTime": "19:30",
+    "endTime": "21:00",
+    "category": "personal",
+    "telegramReminder": false,
+    "completed": false
+  },
+  {
+    "id": "9",
+    "title": "Reading Time",
+    "description": "Atomic Habits - Chapter 5",
+    "startTime": "21:30",
+    "endTime": "22:30",
+    "category": "learning",
+    "telegramReminder": false,
+    "completed": false
+  }
+]

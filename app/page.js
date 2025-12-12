@@ -1,66 +1,48 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import Link from 'next/link'
 
 export default function Home() {
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.js file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="text-center py-12">
+      <h1 className="text-4xl font-bold text-gray-900 mb-6">
+        Welcome to <span className="text-primary">Todo App</span>
+      </h1>
+      <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
+        A modern Next.js application with App Router, Tailwind CSS, and Supabase integration.
+      </p>
+      
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
+        <div className="bg-white p-6 rounded-lg shadow-md border">
+          <h3 className="font-semibold text-lg mb-2">Next.js 14</h3>
+          <p className="text-gray-600">Using the latest App Router with server components.</p>
         </div>
-        <div className={styles.ctas}>
+        <div className="bg-white p-6 rounded-lg shadow-md border">
+          <h3 className="font-semibold text-lg mb-2">Tailwind CSS</h3>
+          <p className="text-gray-600">Utility-first CSS framework for rapid UI development.</p>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow-md border">
+          <h3 className="font-semibold text-lg mb-2">Supabase</h3>
+          <p className="text-gray-600">Open-source Firebase alternative with real-time database.</p>
+        </div>
+      </div>
+
+      <div className="mt-12">
+        <Link
+          href="/dashboard"
+          className="bg-primary text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+        >
+          Go to Dashboard
+        </Link>
+        
+        <div className="mt-6">
           <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
+            href="/api/health"
             target="_blank"
-            rel="noopener noreferrer"
+            className="text-secondary hover:underline"
           >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
+            Check API Health
           </a>
         </div>
-      </main>
+      </div>
     </div>
-  );
+  )
 }

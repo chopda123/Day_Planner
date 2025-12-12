@@ -1,0 +1,2 @@
+name = "telegram-bot"
+verify_jwt = false
