@@ -1,13 +1,16 @@
 
-// app/api/plans/create/route.js - FULL VERSION
+
+// app/api/plans/create/route.js
 import { createAdminClient } from '@/lib/supabaseClient';
 import { NextResponse } from 'next/server';
 
 export async function POST(request) {
+  let planId = null;
+  const insertedTaskIds = [];
+  
   try {
     console.log('📝 Plans create API called');
     
-    // Parse the request
     const body = await request.json();
     console.log('Received data:', body);
     
@@ -16,19 +19,23 @@ export async function POST(request) {
     // Validation
     if (!title || !user_id) {
       return NextResponse.json(
-        { error: 'Missing required fields: title and user_id are required' },
+        { success: false, message: 'Missing required fields: title and user_id are required' },
         { status: 400 }
       );
     }
     
-    // Check if we have env vars
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      throw new Error('SUPABASE_SERVICE_ROLE_KEY is not configured');
-    }
+    // Validate duration_days
+    const validDurations = [30, 90, 180, 360]; // 1, 3, 6, 12 months
+    const actualDuration = duration_days || 30;
     
-    // Create admin client
+    // If not a standard duration, round to nearest valid duration
+    const validatedDuration = validDurations.includes(actualDuration) 
+      ? actualDuration 
+      : validDurations.reduce((prev, curr) => {
+          return (Math.abs(curr - actualDuration) < Math.abs(prev - actualDuration) ? curr : prev);
+        });
+    
     const supabaseAdmin = createAdminClient();
-    console.log('Supabase admin client created');
     
     // Start transaction - Insert plan first
     console.log('Inserting plan...');
@@ -39,7 +46,7 @@ export async function POST(request) {
         title,
         description: description || '',
         start_date: start_date || new Date().toISOString().split('T')[0],
-        duration_days: duration_days || 1,
+        duration_days: validatedDuration,
         status: 'active',
         plan_type: 'daily'
       })
@@ -51,9 +58,9 @@ export async function POST(request) {
       throw planError;
     }
     
-    console.log('Plan inserted with ID:', plan.id);
+    planId = plan.id;
+    console.log('Plan inserted with ID:', planId);
     
-    const insertedTaskIds = [];
     const today = new Date().toISOString().split('T')[0];
     
     // Insert tasks if provided
@@ -63,11 +70,16 @@ export async function POST(request) {
       for (const taskData of tasks) {
         const taskDate = start_date || today;
         
+        // Validate required task fields
+        if (!taskData.title || !taskData.start_time || !taskData.end_time) {
+          throw new Error('Task is missing required fields: title, start_time, or end_time');
+        }
+        
         // Insert task
         const { data: task, error: taskError } = await supabaseAdmin
           .from('tasks')
           .insert({
-            plan_id: plan.id,
+            plan_id: planId,
             user_id,
             title: taskData.title,
             description: taskData.description || '',
@@ -75,8 +87,8 @@ export async function POST(request) {
             end_time: taskData.end_time,
             task_date: taskDate,
             category: taskData.category || 'other',
-            telegram_reminder: taskData.reminder_on || false,
-            reminder_minutes_before: taskData.reminder_minutes || 15,
+            telegram_reminder: taskData.telegram_reminder || false,
+            reminder_minutes_before: taskData.reminder_minutes_before || 15,
             status: 'pending',
             priority: taskData.priority || 3
           })
@@ -90,52 +102,49 @@ export async function POST(request) {
         
         console.log('Task inserted with ID:', task.id);
         insertedTaskIds.push(task.id);
-        
-        // Create reminder if enabled
-        if (taskData.reminder_on) {
-          // Calculate reminder time (15 minutes before task by default)
-          const reminderMinutes = taskData.reminder_minutes || 15;
-          const taskDateTime = new Date(`${taskDate}T${taskData.start_time}`);
-          const remindAt = new Date(taskDateTime.getTime() - reminderMinutes * 60000);
-          
-          console.log(`Creating reminder for task ${task.id} at ${remindAt.toISOString()}`);
-          
-          const { error: reminderError } = await supabaseAdmin
-            .from('reminders')
-            .insert({
-              task_id: task.id,
-              user_id,
-              remind_at: remindAt.toISOString(),
-              original_remind_at: remindAt.toISOString(),
-              reminder_type: 'telegram',
-              sent: false
-            });
-          
-          if (reminderError) {
-            console.error('Reminder insert error:', reminderError);
-            // Don't throw - continue with other tasks
-          }
-        }
       }
     }
     
     console.log('✅ All operations completed successfully');
     return NextResponse.json({
       success: true,
-      plan_id: plan.id,
+      plan_id: planId,
       task_ids: insertedTaskIds,
       message: `Plan created with ${insertedTaskIds.length} tasks`
     });
     
   } catch (error) {
     console.error('❌ Error in plans/create:', error);
+    
+    // Rollback: Delete plan and any inserted tasks if there was an error
+    if (planId) {
+      try {
+        const supabaseAdmin = createAdminClient();
+        
+        // Delete any inserted tasks first (foreign key constraint)
+        if (insertedTaskIds.length > 0) {
+          await supabaseAdmin
+            .from('tasks')
+            .delete()
+            .in('id', insertedTaskIds);
+        }
+        
+        // Delete the plan
+        await supabaseAdmin
+          .from('plans')
+          .delete()
+          .eq('id', planId);
+          
+        console.log('Rolled back plan creation due to error');
+      } catch (rollbackError) {
+        console.error('Error during rollback:', rollbackError);
+      }
+    }
+    
     return NextResponse.json({
-      error: 'Failed to create plan',
-      details: error.message,
-      // Include more info in development
-      ...(process.env.NODE_ENV === 'development' && {
-        stack: error.stack
-      })
+      success: false,
+      message: 'Failed to create plan',
+      details: error.message
     }, { status: 500 });
   }
 }

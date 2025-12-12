@@ -4,6 +4,8 @@
 
 
 
+
+// components/TaskForm.js
 'use client'
 
 import React, { useState } from 'react';
@@ -19,6 +21,7 @@ const TaskForm = ({ onTaskAdded }) => {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   const categories = [
     { value: 'work', label: 'Work', color: 'bg-blue-100 text-blue-800' },
@@ -35,18 +38,21 @@ const TaskForm = ({ onTaskAdded }) => {
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
+    setError(''); // Clear error when user types
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     
+    // Validation
     if (!formData.title.trim()) {
-      alert('Please enter a task title');
+      setError('Please enter a task title');
       return;
     }
 
     if (formData.startTime >= formData.endTime) {
-      alert('End time must be after start time');
+      setError('End time must be after start time');
       return;
     }
 
@@ -55,13 +61,12 @@ const TaskForm = ({ onTaskAdded }) => {
     try {
       // Format time to ensure HH:MM format
       const formattedTask = {
-        id: Date.now().toString(),
         title: formData.title.trim(),
         description: formData.description.trim(),
-        startTime: formData.startTime.includes(':') ? formData.startTime : formData.startTime + ':00',
-        endTime: formData.endTime.includes(':') ? formData.endTime : formData.endTime + ':00',
+        start_time: formData.startTime.includes(':') ? formData.startTime : formData.startTime + ':00',
+        end_time: formData.endTime.includes(':') ? formData.endTime : formData.endTime + ':00',
         category: formData.category,
-        telegramReminder: formData.telegramReminder
+        telegram_reminder: formData.telegramReminder
       };
 
       console.log('Submitting task:', formattedTask);
@@ -83,7 +88,7 @@ const TaskForm = ({ onTaskAdded }) => {
 
     } catch (error) {
       console.error('Error in TaskForm submit:', error);
-      alert('Failed to add task. Please try again.');
+      setError(error.message || 'Failed to add task. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -109,6 +114,13 @@ const TaskForm = ({ onTaskAdded }) => {
   return (
     <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-lg border border-gray-200 p-6">
       <h2 className="text-2xl font-bold text-gray-800 mb-6">Add New Task</h2>
+      
+      {/* Error Message */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-red-700 text-sm">{error}</p>
+        </div>
+      )}
       
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Task Title */}
@@ -195,9 +207,9 @@ const TaskForm = ({ onTaskAdded }) => {
               <button
                 key={category.value}
                 type="button"
-                onClick={() => setFormData(prev => ({ ...prev, category: category.value }))}
+                onClick={() => setFormData({ ...formData, category: category.value })}
                 disabled={isSubmitting}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${formData.category === category.value
+                className={`px-3 py-2 rounded-lg text-sm font-medium ${formData.category === category.value
                     ? `${category.color} border-2 border-gray-800`
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -222,9 +234,6 @@ const TaskForm = ({ onTaskAdded }) => {
           <label htmlFor="telegramReminder" className="ml-2 text-sm text-gray-700">
             Set Telegram reminder for this task
           </label>
-          <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-            Beta
-          </span>
         </div>
 
         {/* Submit Button */}
@@ -245,10 +254,6 @@ const TaskForm = ({ onTaskAdded }) => {
             'Add Task to Timeline'
           )}
         </button>
-
-        <p className="text-xs text-gray-500 text-center mt-4">
-          Tasks are stored securely in your database.
-        </p>
       </form>
     </div>
   );

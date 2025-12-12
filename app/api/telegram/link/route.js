@@ -1,7 +1,6 @@
 
 
-
-// app/api/telegram/link/route.js - Updated for new flow
+// app/api/telegram/link/route.js
 import { createAdminClient } from '@/lib/supabaseClient';
 import { NextResponse } from 'next/server';
 
@@ -16,7 +15,7 @@ export async function POST(request) {
     
     if (!user_id) {
       return NextResponse.json(
-        { error: 'user_id is required' },
+        { success: false, message: 'user_id is required' },
         { status: 400 }
       );
     }
@@ -36,9 +35,31 @@ export async function POST(request) {
       });
     }
     
-    // For regular linking, we now use OTP flow instead
-    // This endpoint is kept for backward compatibility
+    // For linking with verification code
     if (chat_id) {
+      // Check if chat_id is already linked to another user
+      const { data: existingLink, error: checkError } = await supabaseAdmin
+        .from('telegram_links')
+        .select('user_id')
+        .eq('chat_id', chat_id)
+        .neq('user_id', user_id)
+        .single();
+      
+      if (checkError && checkError.code !== 'PGRST116') {
+        console.error('Error checking existing link:', checkError);
+      }
+      
+      if (existingLink) {
+        return NextResponse.json(
+          { 
+            success: false, 
+            message: 'This Telegram account is already linked to another user',
+            conflict: true 
+          },
+          { status: 409 }
+        );
+      }
+      
       const linkData = {
         user_id,
         chat_id,
@@ -51,7 +72,7 @@ export async function POST(request) {
         linkData.verified_at = new Date().toISOString();
       }
       
-      console.log('Inserting link data:', linkData);
+      console.log('Inserting/updating link data:', linkData);
       
       const { data: link, error: linkError } = await supabaseAdmin
         .from('telegram_links')
@@ -66,19 +87,6 @@ export async function POST(request) {
         throw linkError;
       }
       
-      // Log activity
-      await supabaseAdmin
-        .from('activity_logs')
-        .insert({
-          user_id,
-          action_type: code ? 'telegram_connected' : 'telegram_verification_attempt',
-          action_details: {
-            chat_id,
-            verified: !!code,
-            timestamp: new Date().toISOString()
-          }
-        });
-      
       return NextResponse.json({
         success: true,
         verified: !!code,
@@ -89,14 +97,14 @@ export async function POST(request) {
     
     return NextResponse.json({
       success: false,
-      message: 'Invalid request'
+      message: 'Invalid request: chat_id is required for linking'
     }, { status: 400 });
     
   } catch (error) {
     console.error('❌ Error in telegram/link:', error);
     return NextResponse.json({
       success: false,
-      error: 'Failed to link Telegram account',
+      message: 'Failed to link Telegram account',
       details: error.message
     }, { status: 500 });
   }

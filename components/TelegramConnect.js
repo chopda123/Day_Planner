@@ -1,6 +1,9 @@
 
 
 
+
+
+// components/TelegramConnect.js
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
@@ -12,11 +15,13 @@ const TelegramConnect = ({ onClose, userId, onSuccess }) => {
   const [botConnected, setBotConnected] = useState(false)
   const [polling, setPolling] = useState(false)
   const [pollingCount, setPollingCount] = useState(0)
-  const [autoRedirectDone, setAutoRedirectDone] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [showManualSetup, setShowManualSetup] = useState(false)
   
   const telegramBotUsername = 'improve_your_life_bot'
   const telegramBotLink = `https://t.me/${telegramBotUsername}`
   const pollingIntervalRef = useRef(null)
+  const maxPollingAttempts = 40 // 2 minutes at 3-second intervals
   
   const steps = [
     {
@@ -48,75 +53,16 @@ const TelegramConnect = ({ onClose, userId, onSuccess }) => {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current)
-      }
+      stopPolling()
     }
   }, [])
 
-  const handleAutoRedirect = () => {
-    const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || telegramBotUsername
-    const botUrl = `https://t.me/${botUsername}?start=web_${userId}`
-    
-    window.open(botUrl, '_blank', 'noopener,noreferrer')
-    setAutoRedirectDone(true)
-    
-    // Start polling for link status
-    startOTPPolling()
-    
-    // Show success message after opening Telegram
-    setTimeout(() => {
-      setStep(2)
-    }, 1000)
-  }
-
-  const startOTPPolling = () => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current)
+  // Validate user_id at mount
+  useEffect(() => {
+    if (!userId) {
+      setErrorMessage('User ID is required. Please sign in again.')
     }
-    
-    setPolling(true)
-    setPollingCount(0)
-    
-    pollingIntervalRef.current = setInterval(async () => {
-      try {
-        setPollingCount(prev => prev + 1)
-        
-        // Check if Telegram is linked
-        const response = await fetch('/api/telegram/check-link', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId })
-        })
-        
-        const data = await response.json()
-        
-        if (data.linked) {
-          // Success! Stop polling and update state
-          clearInterval(pollingIntervalRef.current)
-          setPolling(false)
-          setBotConnected(true)
-          setStep(4)
-          
-          if (onSuccess) {
-            onSuccess()
-          }
-          
-          alert('✅ Account linked successfully via auto-detect!')
-        }
-        
-        // Stop polling after 30 attempts (90 seconds)
-        if (pollingCount > 30) {
-          clearInterval(pollingIntervalRef.current)
-          setPolling(false)
-          console.log('Polling timeout - user can enter OTP manually')
-        }
-      } catch (error) {
-        console.error('Polling error:', error)
-        // Continue polling on error
-      }
-    }, 3000) // Check every 3 seconds
-  }
+  }, [userId])
 
   const stopPolling = () => {
     if (pollingIntervalRef.current) {
@@ -126,7 +72,134 @@ const TelegramConnect = ({ onClose, userId, onSuccess }) => {
     setPolling(false)
   }
 
+  const startOTPPolling = () => {
+    stopPolling() // Clear any existing interval
+    
+    setPolling(true)
+    setPollingCount(0)
+    setErrorMessage('')
+    
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        setPollingCount(prev => {
+          const newCount = prev + 1
+          
+          // Stop polling after max attempts
+          if (newCount >= maxPollingAttempts) {
+            stopPolling()
+            setErrorMessage('Polling timeout. Please try manual setup.')
+            setShowManualSetup(true)
+            return newCount
+          }
+          
+          return newCount
+        })
+        
+        // Check if Telegram is linked
+        const response = await fetch('/api/telegram/check-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId })
+        })
+        
+        const data = await response.json()
+        
+        if (data.linked) {
+          // Success! Stop polling and update state
+          stopPolling()
+          setBotConnected(true)
+          setStep(4)
+          
+          if (onSuccess) {
+            onSuccess()
+          }
+        }
+      } catch (error) {
+        console.error('Polling error:', error)
+        // Continue polling on error
+      }
+    }, 3000) // Check every 3 seconds
+  }
+
+  const handleAutoRedirect = () => {
+    if (!userId) {
+      setErrorMessage('User ID is missing. Please sign in again.')
+      return
+    }
+    
+    const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || telegramBotUsername
+    const botUrl = `https://t.me/${botUsername}?start=web_${userId}`
+    
+    // Try to open Telegram
+    const telegramWindow = window.open(botUrl, '_blank', 'noopener,noreferrer')
+    
+    if (!telegramWindow || telegramWindow.closed || typeof telegramWindow.closed == 'undefined') {
+      // Popup blocked or failed
+      setErrorMessage('Could not open Telegram. Please make sure popups are allowed, or manually open the bot.')
+      setShowManualSetup(true)
+      return
+    }
+    
+    setShowManualSetup(false)
+    
+    // Start polling for link status
+    startOTPPolling()
+    
+    // Move to step 2 after opening Telegram
+    setTimeout(() => {
+      setStep(2)
+    }, 1000)
+  }
+
+  const verifyOTP = async () => {
+    if (!otpCode || otpCode.length !== 6) {
+      setErrorMessage('Please enter a valid 6-digit code')
+      return
+    }
+
+    if (!userId) {
+      setErrorMessage('User ID is missing. Please sign in again.')
+      return
+    }
+
+    setLoading(true)
+    setErrorMessage('')
+    
+    try {
+      const response = await fetch('/api/telegram/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          otp: otpCode, 
+          user_id: userId
+        })
+      })
+
+      const data = await response.json()
+      
+      if (data.success) {
+        // Stop any ongoing polling
+        stopPolling()
+        
+        setBotConnected(true)
+        setStep(4)
+        if (onSuccess) {
+          onSuccess()
+        }
+      } else {
+        setErrorMessage(data.message || 'Failed to verify code. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error verifying OTP:', error)
+      setErrorMessage('Error connecting to server. Please check your connection.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleConnect = async () => {
+    setErrorMessage('')
+    
     if (step === 1) {
       handleAutoRedirect()
     } else if (step === 2) {
@@ -138,59 +211,24 @@ const TelegramConnect = ({ onClose, userId, onSuccess }) => {
     }
   }
 
-  const verifyOTP = async () => {
-    if (!otpCode || otpCode.length !== 6) {
-      alert('Please enter a valid 6-digit code')
-      return
-    }
-
-    setLoading(true)
-    try {
-      console.log('Sending verification:', { otp: otpCode, userId })
-      
-      const response = await fetch('/api/telegram/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          otp: otpCode, 
-          userId: userId
-        })
-      })
-
-      const data = await response.json()
-      console.log('Verification response:', data)
-      
-      if (data.success) {
-        // Stop any ongoing polling
-        stopPolling()
-        
-        setBotConnected(true)
-        setStep(4)
-        if (onSuccess) {
-          onSuccess()
-        }
-        alert('✅ Account linked successfully!')
-      } else {
-        alert(data.message || 'Failed to verify code. Please try again.')
-      }
-    } catch (error) {
-      console.error('Error verifying OTP:', error)
-      alert('Error connecting to server. Please check your connection.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const handleSkip = () => {
     if (step < 4) {
       // Stop polling when skipping
-      if (polling) {
-        stopPolling()
-      }
+      stopPolling()
       setStep(step + 1)
     } else {
       onClose()
     }
+  }
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        alert('Bot username copied to clipboard!')
+      })
+      .catch(err => {
+        console.error('Failed to copy:', err)
+      })
   }
 
   return (
@@ -245,6 +283,13 @@ const TelegramConnect = ({ onClose, userId, onSuccess }) => {
               </div>
             </div>
 
+            {/* Error Message */}
+            {errorMessage && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-700 text-sm">{errorMessage}</p>
+              </div>
+            )}
+
             {/* Current Step */}
             <div className="mb-6">
               <div className="flex items-center mb-4">
@@ -274,7 +319,7 @@ const TelegramConnect = ({ onClose, userId, onSuccess }) => {
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                           </svg>
-                          Detecting link...
+                          Detecting link... ({pollingCount * 3}s)
                         </span>
                       ) : (
                         <>
@@ -283,31 +328,33 @@ const TelegramConnect = ({ onClose, userId, onSuccess }) => {
                         </>
                       )}
                     </button>
-                    
-                    {polling && (
-                      <div className="mt-3 text-center">
-                        <p className="text-sm text-blue-600">
-                          Waiting for you to start the bot in Telegram...
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          (Auto-detecting for {pollingCount * 3} seconds)
-                        </p>
-                      </div>
-                    )}
                   </div>
                   
-                  <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <h4 className="font-semibold text-gray-700 mb-2">Alternative: Manual Setup</h4>
-                    <p className="text-sm text-gray-600 mb-3">
-                      If auto-detect doesn't work, you can manually:
-                    </p>
-                    <ol className="text-sm text-gray-600 space-y-1 list-decimal list-inside">
-                      <li>Open @{telegramBotUsername} in Telegram</li>
-                      <li>Send <code className="bg-gray-200 px-1 rounded">/start</code> command</li>
-                      <li>Copy the 6-digit code</li>
-                      <li>Paste it in the next step</li>
-                    </ol>
-                  </div>
+                  {/* Manual Setup Option */}
+                  {showManualSetup && (
+                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <h4 className="font-semibold text-gray-700 mb-2">Manual Setup</h4>
+                      <p className="text-sm text-gray-600 mb-3">
+                        If auto-detect doesn't work, manually:
+                      </p>
+                      <ol className="text-sm text-gray-600 space-y-2 list-decimal list-inside">
+                        <li>
+                          Open{' '}
+                          <button
+                            onClick={() => copyToClipboard(telegramBotUsername)}
+                            className="inline-flex items-center px-2 py-1 bg-gray-200 rounded text-gray-700 hover:bg-gray-300"
+                          >
+                            @{telegramBotUsername}
+                            <span className="ml-1 text-xs">📋</span>
+                          </button>
+                          {' '}in Telegram
+                        </li>
+                        <li>Send <code className="bg-gray-100 px-2 py-1 rounded border">/start</code> command</li>
+                        <li>Copy the 6-digit code</li>
+                        <li>Paste it in the next step</li>
+                      </ol>
+                    </div>
+                  )}
                 </div>
               )}
               
@@ -371,12 +418,6 @@ const TelegramConnect = ({ onClose, userId, onSuccess }) => {
                   <p className="text-sm text-gray-500 mt-2 text-center">
                     The code expires in 10 minutes
                   </p>
-                  
-                  {/* Debug info */}
-                  <div className="mt-3 text-xs text-gray-400">
-                    <p>User ID: {userId?.substring(0, 8)}...</p>
-                    <p>Bot: @{telegramBotUsername}</p>
-                  </div>
                 </div>
               )}
               
@@ -388,14 +429,8 @@ const TelegramConnect = ({ onClose, userId, onSuccess }) => {
                     <div>
                       <h4 className="font-bold text-green-800">Successfully Connected!</h4>
                       <p className="text-green-600 text-sm mt-1">
-                        Your Telegram account is now linked. You'll receive:
+                        Your Telegram account is now linked. You'll receive reminders for your tasks.
                       </p>
-                      <ul className="text-green-600 text-sm mt-2 space-y-1">
-                        <li>• Morning messages at 6 AM</li>
-                        <li>• Night checklists at 10 PM</li>
-                        <li>• Weekly reports on Sunday</li>
-                        <li>• Task reminders 15 minutes before</li>
-                      </ul>
                     </div>
                   </div>
                 </div>
@@ -421,10 +456,6 @@ const TelegramConnect = ({ onClose, userId, onSuccess }) => {
                 <li className="flex items-start">
                   <span className="text-green-500 mr-2">✓</span>
                   View today's tasks with /today command
-                </li>
-                <li className="flex items-start">
-                  <span className="text-green-500 mr-2">✓</span>
-                  Get weekly discipline reports
                 </li>
               </ul>
             </div>

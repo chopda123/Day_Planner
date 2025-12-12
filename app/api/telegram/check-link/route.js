@@ -1,40 +1,45 @@
-import { createAdminClient } from '@/lib/supabaseClient'
-import { NextResponse } from 'next/server'
+
+
+
+// app/api/telegram/check-link/route.js
+import { createAdminClient } from '@/lib/supabaseClient';
+import { NextResponse } from 'next/server';
 
 export async function POST(request) {
   try {
-    const supabaseAdmin = createAdminClient()
-    const { userId } = await request.json()
+    const supabaseAdmin = createAdminClient();
+    const { user_id } = await request.json();
     
-    if (!userId) {
+    if (!user_id) {
       return NextResponse.json(
-        { error: 'userId is required' },
+        { error: 'user_id is required' },
         { status: 400 }
-      )
+      );
     }
     
     // Check if user has verified Telegram link
     const { data: link, error } = await supabaseAdmin
       .from('telegram_links')
       .select('*')
-      .eq('user_id', userId)
+      .eq('user_id', user_id)
       .eq('verified', true)
-      .single()
+      .single();
     
     if (error && error.code !== 'PGRST116') {
-      throw error
+      throw error;
     }
     
     return NextResponse.json({
       linked: !!link,
-      telegram_username: link?.telegram_username
-    })
+      telegram_username: link?.telegram_username,
+      chat_id: link?.chat_id
+    });
     
   } catch (error) {
-    console.error('Error checking Telegram link:', error)
+    console.error('Error checking Telegram link:', error);
     return NextResponse.json(
       { error: 'Failed to check Telegram link' },
       { status: 500 }
-    )
+    );
   }
 }
