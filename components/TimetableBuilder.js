@@ -1,4 +1,5 @@
-// components/TimetableBuilder.js
+
+
 'use client'
 
 import { useState } from 'react'
@@ -12,14 +13,15 @@ export default function TimetableBuilder({ config, onChange }) {
     days: []
   })
 
+  // Use numbers for days instead of strings
   const daysOfWeek = [
-    { id: 'monday', label: 'Mon' },
-    { id: 'tuesday', label: 'Tue' },
-    { id: 'wednesday', label: 'Wed' },
-    { id: 'thursday', label: 'Thu' },
-    { id: 'friday', label: 'Fri' },
-    { id: 'saturday', label: 'Sat' },
-    { id: 'sunday', label: 'Sun' }
+    { id: 1, label: 'Monday', short: 'Mon' },
+    { id: 2, label: 'Tuesday', short: 'Tue' },
+    { id: 3, label: 'Wednesday', short: 'Wed' },
+    { id: 4, label: 'Thursday', short: 'Thu' },
+    { id: 5, label: 'Friday', short: 'Fri' },
+    { id: 6, label: 'Saturday', short: 'Sat' },
+    { id: 0, label: 'Sunday', short: 'Sun' } // 0 for Sunday
   ]
 
   const categories = [
@@ -186,7 +188,7 @@ export default function TimetableBuilder({ config, onChange }) {
                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                   }`}
               >
-                {day.label}
+                {day.short}
               </button>
             ))}
           </div>
@@ -240,7 +242,7 @@ export default function TimetableBuilder({ config, onChange }) {
                           const day = daysOfWeek.find(d => d.id === dayId)
                           return (
                             <span key={dayId} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">
-                              {day?.label}
+                              {day?.short || `Day ${dayId}`}
                             </span>
                           )
                         })}

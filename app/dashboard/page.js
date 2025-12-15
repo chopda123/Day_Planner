@@ -1,5 +1,6 @@
 
 
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -34,13 +35,27 @@ export default function Dashboard() {
         }
         
         if (user) {
+          console.log('👤 Logged in user:', {
+            id: user.id,
+            email: user.email,
+            idLength: user.id.length,
+            isUUID: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id)
+          });
+          
           setUser(user)
           setUserId(user.id)
+          
+          // Call debug first
+          await debugUserStatus(user.id);
+          
           await checkTelegramLink(user.id)
           await loadUserTasks(user.id)
           
           // Ensure user has a profile before adding tasks
-          await ensureUserProfile(user.id, user.email)
+          const success = await ensureUserProfile(user.id, user.email)
+          if (!success) {
+            console.warn('⚠️  User profile creation had issues');
+          }
         } else {
           router.push('/auth/login')
         }
@@ -54,35 +69,227 @@ export default function Dashboard() {
     getUser()
   }, [router])
 
+  // Debug function to check user status
+  const debugUserStatus = async (userId) => {
+    try {
+      console.log('🛠️  DEBUG: Checking user status for:', userId);
+      
+      // Check auth user
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      console.log('🔐 Auth user:', authUser?.id);
+      
+      // Check public.users
+      const { data: publicUser, error: publicError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      console.log('👥 Public user:', publicUser ? 'Exists' : 'Missing', publicError?.message);
+      
+      // Check profiles
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      console.log('📋 Profile:', profile ? 'Exists' : 'Missing', profileError?.message);
+      
+      // List all users in public.users
+      const { data: allUsers } = await supabase
+        .from('users')
+        .select('id, email')
+        .limit(5);
+      console.log('📊 All users in public.users:', allUsers);
+      
+    } catch (error) {
+      console.error('Debug error:', error);
+    }
+  };
+
   // Ensure user has a profile in the database
   const ensureUserProfile = async (userId, email) => {
     try {
-      // Check if profile exists
-      const { data: existingProfile, error } = await supabase
-        .from('profiles')
-        .select('id')
+      console.log('🔍 Ensuring user exists for:', { 
+        userId, 
+        email,
+        userIdType: typeof userId,
+        userIdLength: userId?.length 
+      });
+      
+      // Log what we're working with
+      console.log('📊 User info from auth:', {
+        userId,
+        email,
+        formattedUserId: userId?.trim(),
+        isUUID: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)
+      });
+      
+      // First, let's check if the user exists in public.users with exact match
+      const { data: existingUser, error: userError } = await supabase
+        .from('users')
+        .select('id, email, auth_user_id')
         .eq('id', userId)
-        .single()
+        .single();
 
-      // If profile doesn't exist, create one
-      if (error && error.code === 'PGRST116') { // PGRST116 = no rows returned
-        const { error: insertError } = await supabase
-          .from('profiles')
-          .insert({
-            id: userId,
-            email: email,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
+      console.log('🔎 Check result:', {
+        foundUser: !!existingUser,
+        userError: userError?.message,
+        errorCode: userError?.code,
+        existingUserId: existingUser?.id
+      });
 
-        if (insertError) {
-          console.error('Error creating user profile:', insertError)
+      // If user doesn't exist, create them
+      if (userError && userError.code === 'PGRST116') {
+        console.log('➕ Creating user in public.users table...');
+        
+        // Try to insert with the exact auth user ID
+        const userData = {
+          id: userId,
+          email: email,
+          auth_user_id: userId,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        console.log('📝 Inserting user data:', userData);
+        
+        const { error: insertUserError, data: insertedUser } = await supabase
+          .from('users')
+          .insert(userData)
+          .select()
+          .single();
+
+        if (insertUserError) {
+          console.error('❌ Error creating user:', insertUserError);
+          
+          // If it's a duplicate key error, try to update instead
+          if (insertUserError.code === '23505') {
+            console.log('🔄 User already exists, updating instead...');
+            const { error: updateError } = await supabase
+              .from('users')
+              .update({
+                email: email,
+                auth_user_id: userId,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', userId);
+              
+            if (updateError) {
+              console.error('❌ Error updating user:', updateError);
+            } else {
+              console.log('✅ User updated successfully');
+            }
+          } else {
+            // Try alternative approach - maybe the ID needs to be different?
+            console.log('🔄 Trying alternative approach...');
+            
+            // Check if there's a user with matching email but different ID
+            const { data: userByEmail } = await supabase
+              .from('users')
+              .select('id, email')
+              .eq('email', email)
+              .single();
+              
+            if (userByEmail) {
+              console.log('🔍 Found user by email:', userByEmail);
+              console.log('⚠️  User exists with different ID. Consider merging or fixing.');
+            }
+          }
         } else {
-          console.log('User profile created successfully')
+          console.log('✅ User created in public.users:', insertedUser);
+        }
+      } else if (userError) {
+        console.error('❌ Error checking user:', userError);
+        console.log('🔧 Error details:', {
+          code: userError.code,
+          message: userError.message,
+          details: userError.details
+        });
+      } else {
+        console.log('✅ User exists in public.users:', {
+          id: existingUser.id,
+          email: existingUser.email,
+          auth_user_id: existingUser.auth_user_id
+        });
+        
+        // Check if auth_user_id is set correctly
+        if (existingUser.auth_user_id !== userId) {
+          console.log('⚠️  auth_user_id mismatch. Updating...');
+          await supabase
+            .from('users')
+            .update({ 
+              auth_user_id: userId,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', userId);
         }
       }
+
+      // Now ensure profile exists
+      console.log('👤 Checking/creating profile...');
+      const { data: existingProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, email')
+        .eq('id', userId)
+        .single();
+
+      if (profileError && profileError.code === 'PGRST116') {
+        console.log('➕ Creating user profile...');
+        const profileData = {
+          id: userId,
+          email: email,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        const { error: insertProfileError } = await supabase
+          .from('profiles')
+          .insert(profileData);
+
+        if (insertProfileError) {
+          console.error('❌ Error creating profile:', insertProfileError);
+          
+          // Try update if exists
+          if (insertProfileError.code === '23505') {
+            await supabase
+              .from('profiles')
+              .update({
+                email: email,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', userId);
+          }
+        } else {
+          console.log('✅ Profile created successfully');
+        }
+      } else if (profileError) {
+        console.error('❌ Error checking profile:', profileError);
+      } else {
+        console.log('✅ Profile already exists:', existingProfile.email);
+      }
+
+      // Final verification
+      console.log('🔍 Final verification...');
+      const { data: finalCheck } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .single();
+        
+      if (finalCheck) {
+        console.log('🎉 SUCCESS: User is ready for task creation!');
+        return true;
+      } else {
+        console.error('❌ FAILED: User not found after all attempts');
+        return false;
+      }
+
     } catch (error) {
-      console.error('Error ensuring user profile:', error)
+      console.error('🔥 Error in ensureUserProfile:', error);
+      console.error('🔥 Stack trace:', error.stack);
+      
+      // Don't fail the whole login
+      return false;
     }
   }
 
@@ -153,30 +360,59 @@ export default function Dashboard() {
     try {
       const today = new Date().toISOString().split('T')[0]
       
-      console.log('Adding task:', {
-        userId,
-        title: newTask.title,
+      // DEBUG: Log what we receive
+      console.log('DEBUG - Received newTask object:', newTask)
+      console.log('DEBUG - Available fields:', {
+        start_time: newTask.start_time,
+        end_time: newTask.end_time,
         startTime: newTask.startTime,
         endTime: newTask.endTime,
+        telegram_reminder: newTask.telegram_reminder,
+        telegramReminder: newTask.telegramReminder
+      })
+      
+      // Get the actual time values (handle both naming conventions)
+      const startTime = newTask.start_time || newTask.startTime
+      const endTime = newTask.end_time || newTask.endTime
+      
+      // Validate times exist
+      if (!startTime || !endTime) {
+        alert('Start time and end time are required')
+        return
+      }
+      
+      console.log('Adding task with times:', {
+        startTime,
+        endTime,
+        userId,
+        title: newTask.title,
         date: today
       })
       
-      // Validate times
-      if (newTask.startTime >= newTask.endTime) {
+      // Validate times format (HH:MM)
+      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/
+      if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+        alert('Time must be in HH:MM format (e.g., 09:00, 14:30)')
+        return
+      }
+      
+      // Validate times order
+      if (startTime >= endTime) {
         alert('End time must be after start time')
         return
       }
 
-      // Prepare task data
+      // Prepare task data - ensure proper time format
       const taskData = {
         user_id: userId,
         title: newTask.title,
         description: newTask.description || '',
-        start_time: newTask.startTime + ':00', // Ensure HH:MM:SS format
-        end_time: newTask.endTime + ':00',
+        // Ensure HH:MM:SS format for time with time zone
+        start_time: startTime.includes(':') ? `${startTime}:00` : `${startTime}:00:00`,
+        end_time: endTime.includes(':') ? `${endTime}:00` : `${endTime}:00:00`,
         task_date: today,
         category: newTask.category || 'other',
-        telegram_reminder: Boolean(newTask.telegramReminder),
+        telegram_reminder: Boolean(newTask.telegram_reminder || newTask.telegramReminder),
         status: 'pending',
         created_at: new Date().toISOString()
       }
@@ -198,9 +434,10 @@ export default function Dashboard() {
       console.log('Task created successfully:', task)
 
       // Create reminder if enabled
-      if (newTask.telegramReminder && task.id) {
+      const telegramReminder = Boolean(newTask.telegram_reminder || newTask.telegramReminder)
+      if (telegramReminder && task.id) {
         try {
-          const remindAt = calculateReminderTime(today, newTask.startTime, 15)
+          const remindAt = calculateReminderTime(today, startTime, 15)
           console.log('Creating reminder for task:', task.id, 'at:', remindAt)
           
           const reminderData = {
@@ -378,6 +615,54 @@ export default function Dashboard() {
                   <span className="text-gray-600">Telegram Reminders</span>
                   <span className="font-medium text-blue-600">{tasksWithReminder}</span>
                 </div>
+              </div>
+            </div>
+
+            {/* Debug Tools Card */}
+            <div className="bg-white rounded-xl shadow border border-gray-200 p-6">
+              <h3 className="font-semibold text-lg text-gray-800 mb-3">Debug Tools</h3>
+              <div className="space-y-2">
+                <button
+                  onClick={() => debugUserStatus(userId)}
+                  className="w-full bg-yellow-500 text-white py-2 px-4 rounded-lg hover:bg-yellow-600"
+                >
+                  Debug User Status
+                </button>
+                <button
+                  onClick={async () => {
+                    const success = await ensureUserProfile(userId, user.email);
+                    alert(success ? 'User ensured!' : 'Failed to ensure user');
+                  }}
+                  className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600"
+                >
+                  Force Ensure User
+                </button>
+                <button
+                  onClick={async () => {
+                    const { data } = await supabase
+                      .from('users')
+                      .select('id, email, auth_user_id')
+                      .limit(5);
+                    console.log('First 5 users:', data);
+                    alert(`Found ${data?.length || 0} users. Check console.`);
+                  }}
+                  className="w-full bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600"
+                >
+                  List All Users
+                </button>
+                <button
+                  onClick={async () => {
+                    const { data: tasks } = await supabase
+                      .from('tasks')
+                      .select('id, user_id, title')
+                      .limit(5);
+                    console.log('First 5 tasks:', tasks);
+                    alert(`Found ${tasks?.length || 0} tasks. Check console.`);
+                  }}
+                  className="w-full bg-purple-500 text-white py-2 px-4 rounded-lg hover:bg-purple-600"
+                >
+                  List All Tasks
+                </button>
               </div>
             </div>
           </div>

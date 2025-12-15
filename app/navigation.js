@@ -1,76 +1,3 @@
-// 'use client'
-
-// import { useState } from 'react'
-// import Link from 'next/link'
-// import { useRouter } from 'next/navigation'
-// import { supabase } from '@/lib/supabaseClient'
-
-// export default function Navigation({ session }) {
-//   const [loading, setLoading] = useState(false)
-//   const router = useRouter()
-
-//   const handleSignOut = async () => {
-//     setLoading(true)
-//     await supabase.auth.signOut()
-//     router.refresh()
-//     setLoading(false)
-//   }
-
-//   return (
-//     <nav className="bg-white shadow-sm border-b">
-//       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-//         <div className="flex justify-between h-16">
-//           <div className="flex items-center">
-//             <Link href="/" className="text-xl font-bold text-blue-600">
-//               Self Upgrade Planner
-//             </Link>
-//             <div className="hidden md:ml-6 md:flex md:space-x-8">
-//               {session && (
-//                 <>
-//                   <Link href="/dashboard" className="text-gray-700 hover:text-gray-900 px-3 py-2">
-//                     Dashboard
-//                   </Link>
-//                   <Link href="/discipline" className="text-gray-700 hover:text-gray-900 px-3 py-2">
-//                     Discipline
-//                   </Link>
-//                   <Link href="/plans/create" className="text-gray-700 hover:text-gray-900 px-3 py-2">
-//                     New Plan
-//                   </Link>
-//                 </>
-//               )}
-//             </div>
-//           </div>
-//           <div className="flex items-center space-x-4">
-//             {session ? (
-//               <>
-//                 <span className="text-sm text-gray-600">
-//                   {session.user.email}
-//                 </span>
-//                 <button
-//                   onClick={handleSignOut}
-//                   disabled={loading}
-//                   className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
-//                 >
-//                   {loading ? 'Signing out...' : 'Sign Out'}
-//                 </button>
-//               </>
-//             ) : (
-//               <>
-//                 <Link href="/auth/login" className="text-gray-700 hover:text-gray-900 px-3 py-2">
-//                   Sign In
-//                 </Link>
-//                 <Link href="/auth/signup" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-//                   Get Started
-//                 </Link>
-//               </>
-//             )}
-//           </div>
-//         </div>
-//       </div>
-//     </nav>
-//   )
-// }
-
 
 
 
@@ -170,6 +97,9 @@ export default function Navigation() {
             <div className="hidden md:ml-6 md:flex md:space-x-8">
               {session && (
                 <>
+                  <Link href="/create-plan" className="px-4 py-2 bg-blue-600 text-white rounded-lg">
+                     Create Plan
+                  </Link> 
                   <Link 
                     href="/dashboard" 
                     className={`inline-flex items-center px-3 py-2 text-sm font-medium ${pathname === '/dashboard' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-700 hover:text-gray-900'}`}

@@ -1,5 +1,6 @@
 
 
+
 // app/api/plans/create/route.js
 import { createAdminClient } from '@/lib/supabaseClient';
 import { NextResponse } from 'next/server';
@@ -12,7 +13,7 @@ export async function POST(request) {
     console.log('📝 Plans create API called');
     
     const body = await request.json();
-    console.log('Received data:', body);
+    console.log('Received data:', JSON.stringify(body, null, 2));
     
     const { title, description, start_date, duration_days, tasks, user_id } = body;
     
@@ -24,11 +25,19 @@ export async function POST(request) {
       );
     }
     
+    // Validate user_id is a UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(user_id)) {
+      return NextResponse.json(
+        { success: false, message: 'Invalid user_id format. Must be a UUID.' },
+        { status: 400 }
+      );
+    }
+    
     // Validate duration_days
-    const validDurations = [30, 90, 180, 360]; // 1, 3, 6, 12 months
+    const validDurations = [30, 90, 180, 360];
     const actualDuration = duration_days || 30;
     
-    // If not a standard duration, round to nearest valid duration
     const validatedDuration = validDurations.includes(actualDuration) 
       ? actualDuration 
       : validDurations.reduce((prev, curr) => {
@@ -37,7 +46,26 @@ export async function POST(request) {
     
     const supabaseAdmin = createAdminClient();
     
-    // Start transaction - Insert plan first
+    // Check if user exists
+    const { data: userCheck, error: userError } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('id', user_id)
+      .single();
+    
+    if (userError || !userCheck) {
+      return NextResponse.json(
+        { success: false, message: 'User does not exist' },
+        { status: 404 }
+      );
+    }
+    
+    // Calculate end date
+    const startDate = start_date || new Date().toISOString().split('T')[0];
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + validatedDuration);
+    
+    // Insert plan
     console.log('Inserting plan...');
     const { data: plan, error: planError } = await supabaseAdmin
       .from('plans')
@@ -45,7 +73,8 @@ export async function POST(request) {
         user_id,
         title,
         description: description || '',
-        start_date: start_date || new Date().toISOString().split('T')[0],
+        start_date: startDate,
+        end_date: endDate.toISOString().split('T')[0],
         duration_days: validatedDuration,
         status: 'active',
         plan_type: 'daily'
@@ -61,42 +90,52 @@ export async function POST(request) {
     planId = plan.id;
     console.log('Plan inserted with ID:', planId);
     
-    const today = new Date().toISOString().split('T')[0];
-    
     // Insert tasks if provided
     if (tasks && Array.isArray(tasks) && tasks.length > 0) {
       console.log(`Inserting ${tasks.length} tasks...`);
       
       for (const taskData of tasks) {
-        const taskDate = start_date || today;
-        
         // Validate required task fields
-        if (!taskData.title || !taskData.start_time || !taskData.end_time) {
-          throw new Error('Task is missing required fields: title, start_time, or end_time');
+        if (!taskData.title || !taskData.task_date) {
+          throw new Error('Task is missing required fields: title and task_date');
         }
+        
+        // Prepare task data matching your database schema
+        const taskToInsert = {
+          plan_id: planId,
+          user_id,
+          title: taskData.title,
+          description: taskData.description || '',
+          category: taskData.category || 'other',
+          task_date: taskData.task_date,
+          start_time: taskData.start_time || '09:00:00',
+          end_time: taskData.end_time || '10:00:00',
+          all_day: taskData.all_day || false,
+          repeat_rule: taskData.repeat_rule || 'none',
+          repeat_until: taskData.repeat_until || null,
+          repeat_days: taskData.repeat_days || [],
+          status: 'pending',
+          priority: taskData.priority || 3,
+          telegram_reminder: taskData.telegram_reminder || false,
+          reminder_minutes_before: taskData.reminder_minutes_before || 15,
+          estimated_duration_minutes: taskData.estimated_duration_minutes || 60,
+          location: taskData.location || '',
+          color_code: taskData.color_code || '#3B82F6',
+          notes: {}
+        };
+        
+        console.log('Inserting task:', taskToInsert);
         
         // Insert task
         const { data: task, error: taskError } = await supabaseAdmin
           .from('tasks')
-          .insert({
-            plan_id: planId,
-            user_id,
-            title: taskData.title,
-            description: taskData.description || '',
-            start_time: taskData.start_time,
-            end_time: taskData.end_time,
-            task_date: taskDate,
-            category: taskData.category || 'other',
-            telegram_reminder: taskData.telegram_reminder || false,
-            reminder_minutes_before: taskData.reminder_minutes_before || 15,
-            status: 'pending',
-            priority: taskData.priority || 3
-          })
+          .insert(taskToInsert)
           .select('id')
           .single();
         
         if (taskError) {
           console.error('Task insert error:', taskError);
+          console.error('Task error details:', taskError.details, taskError.hint);
           throw taskError;
         }
         
@@ -115,6 +154,7 @@ export async function POST(request) {
     
   } catch (error) {
     console.error('❌ Error in plans/create:', error);
+    console.error('Error details:', error.message, error.details);
     
     // Rollback: Delete plan and any inserted tasks if there was an error
     if (planId) {
@@ -144,7 +184,8 @@ export async function POST(request) {
     return NextResponse.json({
       success: false,
       message: 'Failed to create plan',
-      details: error.message
+      details: error.message,
+      hint: error.hint || 'Check if user exists and data format is correct'
     }, { status: 500 });
   }
 }
